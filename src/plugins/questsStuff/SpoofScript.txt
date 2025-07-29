@@ -19,20 +19,24 @@ if(!quest) {
 	
 	const applicationId = quest.config.application.id
 	const applicationName = quest.config.application.name
-	const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => quest.config.taskConfigV2.tasks[x] != null)
-	const secondsNeeded = quest.config.taskConfigV2.tasks[taskName].target
+	const questName = quest.config.messages.questName
+	const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2
+	const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => taskConfig.tasks[x] != null)
+	const secondsNeeded = taskConfig.tasks[taskName].target
 	let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0
 
 	if(taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
 		const maxFuture = 10, speed = 7, interval = 1
 		const enrolledAt = new Date(quest.userStatus.enrolledAt).getTime()
+		let completed = false
 		let fn = async () => {			
 			while(true) {
 				const maxAllowed = Math.floor((Date.now() - enrolledAt)/1000) + maxFuture
 				const diff = maxAllowed - secondsDone
 				const timestamp = secondsDone + speed
 				if(diff >= speed) {
-					await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}})
+					const res = await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}})
+					completed = res.body.completed_at != null
 					secondsDone = Math.min(secondsNeeded, timestamp)
 				}
 				
@@ -41,13 +45,16 @@ if(!quest) {
 				}
 				await new Promise(resolve => setTimeout(resolve, interval * 1000))
 			}
+			if(!completed) {
+				await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: secondsNeeded}})
+			}
 			console.log("Quest completed!")
 		}
 		fn()
-		console.log(`Spoofing video for ${applicationName}.`)
+		console.log(`Spoofing video for ${questName}.`)
 	} else if(taskName === "PLAY_ON_DESKTOP") {
 		if(!isApp) {
-			console.log("This no longer works in browser for non-video quests. Use the desktop app to complete the", applicationName, "quest!")
+			console.log("This no longer works in browser for non-video quests. Use the desktop app to complete the", questName, "quest!")
 		} else {
 			api.get({url: `/applications/public?application_ids=${applicationId}`}).then(res => {
 				const appData = res.body[0]
@@ -94,7 +101,7 @@ if(!quest) {
 		}
 	} else if(taskName === "STREAM_ON_DESKTOP") {
 		if(!isApp) {
-			console.log("This no longer works in browser for non-video quests. Use the desktop app to complete the", applicationName, "quest!")
+			console.log("This no longer works in browser for non-video quests. Use the desktop app to complete the", questName, "quest!")
 		} else {
 			let realFunc = ApplicationStreamingStore.getStreamerActiveStreamMetadata
 			ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => ({
@@ -124,7 +131,7 @@ if(!quest) {
 		const streamKey = `call:${channelId}:1`
 		
 		let fn = async () => {
-			console.log("Completing quest", applicationName, "-", quest.config.messages.questName)
+			console.log("Completing quest", questName, "-", quest.config.messages.questName)
 			
 			while(true) {
 				const res = await api.post({url: `/quests/${quest.id}/heartbeat`, body: {stream_key: streamKey, terminal: false}})
